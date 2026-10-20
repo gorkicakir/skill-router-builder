@@ -187,7 +187,7 @@ class TestOutput(Base):
         text = read_text(os.path.join(self.out, router, 'SKILL.md'))
         for n in COOKING:
             self.assertIn(f'`{n}`', text)
-            self.assertTrue(os.path.isfile(os.path.join(self.out, router, 'skills', n, 'SKILL.md')))
+            self.assertTrue(os.path.isfile(os.path.join(self.out, router, 'skills', n, br.NESTED_NAME)))
 
     def test_zip_layout(self):
         self.build()
@@ -250,6 +250,54 @@ class TestIncrementalBuilds(Base):
         r = run(self.src, self.out)
         self.assertIn("-1 ['tax-forms']", r.stdout)
         self.assertIn('delete from host', r.stdout)
+
+
+class TestHostLimits(Base):
+    def add_assets(self, skill, count):
+        for i in range(count):
+            p = os.path.join(self.src, skill, 'assets', f'a{i}.txt')
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, 'w', encoding='utf-8') as f:
+                f.write('x')
+
+    def all_files(self, top):
+        return [os.path.join(r, f) for r, _, fs in os.walk(os.path.join(self.out, top)) for f in fs]
+
+    def test_each_output_has_exactly_one_skill_md(self):
+        r = run(self.src, self.out)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for top in os.listdir(self.out):
+            if os.path.isdir(os.path.join(self.out, top)):
+                names = [os.path.basename(f) for f in self.all_files(top)]
+                self.assertEqual(names.count('SKILL.md'), 1, top)
+
+    def test_oversized_router_is_split_under_the_limit(self):
+        for n in COOKING:
+            self.add_assets(n, 6)
+        r = run(self.src, self.out, '--max-files', '20')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn('split into', r.stdout)
+        for top in os.listdir(self.out):
+            if os.path.isdir(os.path.join(self.out, top)):
+                self.assertLessEqual(len(self.all_files(top)), 20, top)
+        manifest = load_json(os.path.join(self.out, '.router-manifest.json'))['skills']
+        self.assertTrue(all(n in manifest for n in COOKING))
+
+    def test_unsplittable_bundle_fails_with_advice(self):
+        make_skill(self.src, 'tax-helper', 'Helper scripts.', {'scripts/run.py': "open('../tax-forms/data.csv')"})
+        self.add_assets('tax-helper', 30)
+        r = run(self.src, self.out, '--max-files', '20')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('exclude', r.stdout + r.stderr)
+
+    def test_exclude_and_default_dev_files(self):
+        self.add_assets('telescope-setup', 3)
+        make_skill(self.src, 'telescope-setup', ASTRONOMY['telescope-setup'], {'evals/evals.json': '{}'})
+        r = run(self.src, self.out, '--exclude', 'assets/*')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        files = [f.replace('\\', '/') for top in os.listdir(self.out) if os.path.isdir(os.path.join(self.out, top))
+                 for f in self.all_files(top)]
+        self.assertFalse(any('/telescope-setup/assets/' in f or '/telescope-setup/evals/' in f for f in files))
 
 
 if __name__ == '__main__':

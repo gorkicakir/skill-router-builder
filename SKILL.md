@@ -5,7 +5,7 @@ description: Builds and updates router (umbrella) skills from any large skill co
 
 # Skill Router Builder
 
-Turns a pile of skills into a few auto-generated router skills. Each router's SKILL.md is a map written from its members' own descriptions; members are bundled unchanged under `<router>/skills/<name>/`. Nothing is hard-coded, so it works on any skill set.
+Turns a pile of skills into a few auto-generated router skills. Each router's SKILL.md is a map written from its members' own descriptions; members are bundled under `<router>/skills/<name>/` with their SKILL.md renamed to INSTRUCTIONS.md, so every bundle holds exactly one SKILL.md. Nothing is hard-coded, so it works on any skill set.
 
 Scripts (Python 3 standard library; `networkx` and `git` are used when available):
 - `scripts/build_routers.py` - discover, cluster, write routers, validate, zip, report token savings.
@@ -30,12 +30,12 @@ Run the same command with the same `--out`. The `.router-manifest.json` in the o
 For GitHub sources run `sync_sources.py` first; it prints which repositories changed upstream.
 
 ### Installing the output
-Each `WORK/out/*.zip` is one skill (root folder = skill name, SKILL.md inside) for hosts that take ZIP uploads. If the host refuses a name that already exists, delete the old skill first. Hosts that read a skills folder can take the output folders directly.
+Each `WORK/out/*.zip` is one skill (root folder = skill name, SKILL.md inside) for hosts that take ZIP uploads. Bundles stay under `--max-files` (default 200): development files (`evals/`, `tests/`) are dropped, `exclude` globs remove more, and oversized routers are split into smaller ones automatically. If a file-linked bundle still does not fit, the build stops and names it; add an `exclude` glob for its largest asset folder. If the host refuses a name that already exists, delete the old skill first. Hosts that read a skills folder can take the output folders directly.
 
 ## Config (all keys optional)
 ```json
 {
-  "resolution": 0.7, "min_group": 4, "min_affinity": 2.0,
+  "resolution": 0.7, "min_group": 4, "min_affinity": 2.0, "max_files": 200, "exclude": ["canvas-fonts/*"],
   "standalone": ["skill-that-must-stay-separate"],
   "groups": [{"name": "marketing", "anchors": ["copywriting", "ads"], "members": ["image"],
               "title": "Marketing Router", "title_en": "marketing, ads and growth",

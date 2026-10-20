@@ -4,29 +4,34 @@ build_routers.py - turn any pile of Agent Skills into a few auto-generated route
 
 How it works
   1. Discovers every skill (folder with SKILL.md) under the given roots.
-  2. Builds a "spider web" graph between skills:
+  2. Builds a connection graph between skills:
        - hard links  : a skill uses another skill's files (../other/...)  -> must stay together
        - mentions    : a skill names another skill (`other`, "the other skill", see other, /other)
        - similarity  : TF-IDF similarity of names + descriptions
   3. Finds communities in that graph (Louvain). Each big community becomes one router skill;
      small ones stay standalone.
   4. Writes for every router a SKILL.md map generated from the members' own descriptions,
-     copies members under <router>/skills/<name>/, validates and zips everything.
+     copies members under <router>/skills/<name>/ (their SKILL.md renamed to INSTRUCTIONS.md so each
+     bundle holds exactly one SKILL.md), splits bundles above --max-files, validates and zips everything.
 
 Re-run it whenever skills are added or removed; it reports what changed since the last build.
 Only the Python standard library is required (networkx is used when available).
 
 Usage
   python build_routers.py --src <skills_dir> [--src <more_dirs>] --out <out_dir> [--config cfg.json]
-                          [--min-group 4] [--resolution 1.0] [--no-zip] [--dry-run]
+                          [--min-group 4] [--resolution 1.0] [--max-files 200] [--exclude GLOB]
+                          [--rebalance] [--no-zip] [--dry-run]
 """
-import argparse, hashlib, json, math, os, re, shutil, sys, zipfile
+import argparse, fnmatch, hashlib, json, math, os, re, shutil, sys, zipfile
 from collections import Counter, defaultdict
 
 MAX_DESC = 1024
 NAME_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
 TEXT_EXT = {'.md', '.py', '.js', '.ts', '.mjs', '.cjs', '.json', '.sh', '.txt', '.yaml', '.yml', '.toml', '.html'}
 SKIP_DIRS = {'.git', 'node_modules', '__pycache__', '.venv', 'venv', 'dist', 'build'}
+# development-only files, not needed at runtime
+DEFAULT_EXCLUDE = ['evals/*', 'evals/**', 'tests/*', 'tests/**', 'test/*', 'test/**', '.github/**', '*.coverage', '.coverage']
+NESTED_NAME = 'INSTRUCTIONS.md'  # one SKILL.md per bundle
 STOP = set("""a an and or the of to for in on with by from at as is are be been being this that these those it its into
 over under via vs not no use used uses using user users when where what which who how why can will should would could
 also any all each every their them they you your our we i me my mine more most other others than then so such very
@@ -301,8 +306,7 @@ def cluster(skills, cfg, min_group, resolution):
     for n, g in pinned.items():
         pg[g].add(n)
 
-    # community detection can split a small, well-connected cluster into fragments that are each
-    # below min_group; glue each small fragment to the community it is most strongly tied to
+    # attach fragments smaller than min_group to their most-linked community
     min_aff = cfg.get('min_affinity', 2.0)
     def link(a, b):
         return sum(edges.get(tuple(sorted((x, y))), 0) for x in a for y in b)
@@ -323,8 +327,7 @@ def cluster(skills, cfg, min_group, resolution):
                 changed = True
                 break
 
-    # members only weakly tied to their community stay standalone (cross-cutting skills such as a
-    # general writing-style skill should not hide inside a topical router)
+    # weakly tied members stay standalone
     refined, loose = [], set()
     for g in groups:
         keep = set(g)
@@ -349,7 +352,7 @@ def cluster(skills, cfg, min_group, resolution):
     return result, alone, sim, ment, edges
 
 def sticky(old, skills, fresh_groups, fresh_alone, edges, cfg, min_group):
-    """Keep the previous layout stable; only place skills that are new since the last build."""
+    """Keep the previous layout; place only new skills."""
     forced_alone = set(cfg.get('standalone', []))
     kept = defaultdict(set)
     old_alone = set()
@@ -375,7 +378,7 @@ def sticky(old, skills, fresh_groups, fresh_alone, edges, cfg, min_group):
             kept[best].add(n)
         else:
             unplaced.append(n)
-    # new skills that form a fresh community with each other / old standalones become a new group
+    # new skills forming their own community become a new group
     pool = set(unplaced) | old_alone
     for g in fresh_groups:
         part = g['members'] & pool
@@ -386,6 +389,117 @@ def sticky(old, skills, fresh_groups, fresh_alone, edges, cfg, min_group):
     groups = [{'members': mem, 'cfg': g if g in by_cfg else None, 'old_name': None if g.startswith('__new_') else g}
               for g, mem in kept.items() if mem]
     return groups, pool
+
+# --------------------------------------------------------------------------- file selection
+
+def excluded(rel, patterns):
+    rel = rel.replace('\\', '/')
+    return any(fnmatch.fnmatch(rel, p) or fnmatch.fnmatch(os.path.basename(rel), p) for p in patterns)
+
+def member_files(skill, patterns):
+    out = []
+    for root, dirs, files in os.walk(skill.path):
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        for fn in sorted(files):
+            fp = os.path.join(root, fn)
+            rel = os.path.relpath(fp, skill.path)
+            if not excluded(rel, patterns):
+                out.append(rel)
+    return out
+
+def copy_skill(skill, dst, patterns, nested=False):
+    for rel in member_files(skill, patterns):
+        target = os.path.join(dst, rel)
+        if nested and rel.replace('\\', '/') == 'SKILL.md':
+            target = os.path.join(dst, NESTED_NAME)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copy2(os.path.join(skill.path, rel), target)
+    if nested:  # update references to the renamed file
+        for root, _, files in os.walk(dst):
+            for fn in files:
+                if fn.endswith('.md'):
+                    fp = os.path.join(root, fn)
+                    txt = read(fp)
+                    if 'SKILL.md' in txt:
+                        with open(fp, 'w', encoding='utf-8', newline='') as f:
+                            f.write(txt.replace('SKILL.md', NESTED_NAME))
+
+# --------------------------------------------------------------------------- splitting oversized routers
+
+def split_oversized(members, skills, edges, patterns, max_files, resolution):
+    """Split a group whose bundle would exceed max_files into smaller communities."""
+    count = lambda g: 1 + sum(len(member_files(skills[n], patterns)) for n in g)
+    if not max_files or count(members) <= max_files:
+        return [set(members)], []
+    dsu = DSU(list(members))
+    for n in members:
+        for r in skills[n].hard_refs:
+            if r in members and r != n:
+                dsu.union(n, r)
+    pending, done = [set(members)], []
+    while pending:
+        g = pending.pop()
+        if count(g) <= max_files:
+            done.append(g)
+            continue
+        parts = None
+        for r in (resolution, resolution * 1.5, resolution * 2, resolution * 3, resolution * 5, resolution * 8, resolution * 13):
+            sub = {k: w for k, w in edges.items() if k[0] in g and k[1] in g}
+            comms = communities(sorted(g), sub, r)
+            merged = defaultdict(set)  # hard-linked skills must stay in one part
+            for c in comms:
+                merged[min(dsu.find(n) for n in c)] |= c
+            fused = DSU(list(merged))
+            keys = list(merged)
+            for i, a in enumerate(keys):
+                for b in keys[i + 1:]:
+                    if {dsu.find(n) for n in merged[a]} & {dsu.find(n) for n in merged[b]}:
+                        fused.union(a, b)
+            final = defaultdict(set)
+            for k in keys:
+                final[fused.find(k)] |= merged[k]
+            if len(final) > 1:
+                parts = list(final.values())
+                break
+        if not parts:
+            return None, sorted(g)  # cannot split further (one file-linked bundle)
+        pending.extend(parts)
+    # greedily re-merge parts that still fit, most-linked first
+    link = lambda a, b: sum(edges.get(tuple(sorted((x, y))), 0) for x in a for y in b)
+    while len(done) > 1:
+        best = None
+        for i in range(len(done)):
+            for j in range(i + 1, len(done)):
+                if count(done[i] | done[j]) <= max_files:
+                    score = (link(done[i], done[j]) + 0.001) / (len(done[i]) * len(done[j]))
+                    if best is None or score > best[0]:
+                        best = (score, i, j)
+        if not best:
+            break
+        _, i, j = best
+        done[i] = done[i] | done[j]
+        done.pop(j)
+    return [g for g in done if len(g) > 1], [n for g in done if len(g) == 1 for n in g]
+
+def part_name(base, members, skills, siblings, used):
+    """Name a split part by its most distinctive word."""
+    def words(group):
+        c = Counter()
+        for n in group:
+            c.update(set(tokens(n.replace('-', ' ') + ' ' + n.replace('-', ' ') + ' ' + skills[n].desc)))
+        return c
+    mine, allw = words(members), words(siblings)
+    skip = set(base.split('-')) | {'marketing', 'skill', 'skills', 'user', 'content', 'page', 'pages'}
+    ranked = sorted(((mine[w] / len(members)) * (mine[w] / allw[w]), w) for w in mine
+                    if w not in skip and mine[w] >= 2 and len(w) > 2)
+    for _, w in reversed(ranked):
+        cand = f'{base}-{w}'
+        if cand not in used and len(cand) <= 64:
+            return cand
+    i = 2
+    while f'{base}-{i}' in used:
+        i += 1
+    return f'{base}-{i}'
 
 # --------------------------------------------------------------------------- naming & writing
 
@@ -441,7 +555,7 @@ def router_description(gcfg, members, skills):
     room = MAX_DESC - len(head) - len(tail) - 5
     parts = dict(names)
     body = ', '.join(parts[n] for n in order)
-    for n in order:  # enrich with each member's main trigger phrase while it still fits
+    for n in order:  # add trigger phrases while within the limit
         tr = trig[n]
         if tr and tr.lower() not in parts[n].lower():
             trial = dict(parts); trial[n] = f'{parts[n]} ({tr})'
@@ -452,14 +566,14 @@ def router_description(gcfg, members, skills):
         body = body[:room].rsplit(',', 1)[0]
     return (head + body + tail).replace('\n', ' ')[:MAX_DESC]
 
-def write_router(name, gcfg, members, skills, sim, out_dir):
+def write_router(name, gcfg, members, skills, sim, out_dir, patterns):
     root = os.path.join(out_dir, name)
     os.makedirs(os.path.join(root, 'skills'))
     for n in sorted(members):
-        shutil.copytree(skills[n].path, os.path.join(root, 'skills', skills[n].folder),
-                        ignore=shutil.ignore_patterns(*SKIP_DIRS))
+        dst = os.path.join(root, 'skills', skills[n].folder)
+        copy_skill(skills[n], dst, patterns, nested=True)
         if getattr(skills[n], 'overridden', False):
-            set_desc(os.path.join(root, 'skills', skills[n].folder, 'SKILL.md'), skills[n].desc)
+            set_desc(os.path.join(dst, NESTED_NAME), skills[n].desc)
     desc = router_description(gcfg, members, skills)
     title = (gcfg or {}).get('title') or name.replace('-', ' ').title()
     lines = ['---', f'name: {name}', 'description: ' + json.dumps(desc, ensure_ascii=False), '---', '',
@@ -469,9 +583,9 @@ def write_router(name, gcfg, members, skills, sim, out_dir):
              '## How to use', '',
              '1. Pick the ONE sub-skill below that best fits the request (two at most if the task clearly spans both). '
              'Match on the summary first, then the trigger phrases.',
-             '2. Read `skills/<folder>/SKILL.md` and follow it exactly as if it were installed on its own.',
+             f'2. Read `skills/<folder>/{NESTED_NAME}` and follow it exactly as if it were installed on its own.',
              '3. Paths inside a sub-skill (`references/`, `scripts/`, `../<sibling>/`) are relative to that sub-skill\'s folder.',
-             '4. When a sub-skill says "see/use the X skill" and X is listed here, open `skills/X/SKILL.md`.',
+             f'4. When a sub-skill says "see/use the X skill" and X is listed here, open `skills/X/{NESTED_NAME}`.',
              '5. Never read all sub-skills; load only what the task needs. If nothing fits, do not force one.', '']
     if (gcfg or {}).get('notes'):
         lines += ['## Notes', ''] + [f'- {x}' for x in gcfg['notes']] + ['']
@@ -500,9 +614,9 @@ def set_desc(skill_md, desc):
     with open(skill_md, 'w', encoding='utf-8', newline='\n') as f:
         f.write(t)
 
-def write_standalone(s, out_dir, warnings):
+def write_standalone(s, out_dir, warnings, patterns):
     dst = os.path.join(out_dir, s.folder)
-    shutil.copytree(s.path, dst, ignore=shutil.ignore_patterns(*SKIP_DIRS))
+    copy_skill(s, dst, patterns)
     if getattr(s, 'overridden', False):
         set_desc(os.path.join(dst, 'SKILL.md'), s.desc)
     if len(s.desc) > MAX_DESC:
@@ -547,10 +661,15 @@ def main():
     ap.add_argument('--no-zip', action='store_true')
     ap.add_argument('--dry-run', action='store_true')
     ap.add_argument('--rebalance', action='store_true', help='ignore the previous build and recluster everything')
+    ap.add_argument('--max-files', type=int, default=None,
+                    help='split routers whose bundle would exceed this many files (default 200, 0 = no limit)')
+    ap.add_argument('--exclude', action='append', default=[], help='extra glob of files to leave out (repeatable)')
     a = ap.parse_args()
     cfg = load_json(a.config) if a.config else {}
     a.resolution = a.resolution if a.resolution is not None else cfg.get('resolution', 1.0)
     a.min_group = a.min_group if a.min_group is not None else cfg.get('min_group', 4)
+    a.max_files = a.max_files if a.max_files is not None else cfg.get('max_files', 200)
+    patterns = DEFAULT_EXCLUDE + cfg.get('exclude', []) + a.exclude
     skills, dups = discover(a.src)
     if not skills:
         sys.exit('No skills found.')
@@ -570,7 +689,7 @@ def main():
         groups, alone = sticky(old, skills, groups, alone, edges, cfg, a.min_group)
         print('Sticky mode: existing groups kept, new skills placed by affinity (use --rebalance to recluster).')
 
-    # groups that resolve to the same configured router (anchors / pinned members) are merged
+    # merge groups mapped to the same configured router
     merged, out_groups = {}, []
     for g in groups:
         gc = pick_cfg(g, cfg)
@@ -591,7 +710,24 @@ def main():
         if name in used:
             name = auto_name(g['members'], used)
         used.add(name)
-        plan.append((name, gcfg, g['members']))
+        parts, rest = split_oversized(g['members'], skills, edges, patterns, a.max_files, a.resolution)
+        if parts is None:
+            sys.exit(f'Router "{name}" cannot fit in {a.max_files} files because these skills are file-linked: '
+                     f'{", ".join(rest)}. Add "exclude" globs for large asset folders or raise --max-files.')
+        if len(parts) == 1 and not rest:
+            plan.append((name, gcfg, parts[0]))
+            continue
+        used.discard(name)
+        print(f'  note: "{name}" exceeds {a.max_files} files, split into {len(parts)} routers')
+        for part in sorted(parts, key=lambda p: -len(p)):
+            pname = part_name(name, part, skills, g['members'], used)
+            used.add(pname)
+            pcfg = dict(gcfg or {}, name=pname)
+            if gcfg and gcfg.get('title'):
+                pcfg['title'] = f"{gcfg['title']} - {pname[len(name) + 1:]}"
+            pcfg.pop('title_en', None)
+            plan.append((pname, pcfg, part))
+        alone |= set(rest)
 
     print('\nPlan:')
     for name, _, mem in plan:
@@ -607,13 +743,13 @@ def main():
     for name, gcfg, mem in plan:
         if not NAME_RE.match(name):
             sys.exit(f'Invalid router name: {name}')
-        desc = write_router(name, gcfg, mem, skills, sim, a.out)
+        desc = write_router(name, gcfg, mem, skills, sim, a.out, patterns)
         top.append((name, desc, os.path.join(a.out, name, 'SKILL.md')))
     for n in sorted(alone):
         s = skills[n]
         if not NAME_RE.match(s.name):
             warnings.append(f'{s.name}: name is not lowercase-hyphen, some hosts may reject it')
-        write_standalone(s, a.out, warnings)
+        write_standalone(s, a.out, warnings, patterns)
         top.append((s.name, s.desc[:MAX_DESC], os.path.join(a.out, s.folder, 'SKILL.md')))
 
     # validation
@@ -626,6 +762,13 @@ def main():
             errors.append(f'{name}: description too long')
         if not clean_ws(fm.get('description')):
             errors.append(f'{name}: empty description')
+    for name, _, p in top:
+        d = os.path.dirname(p)
+        files = [os.path.join(r, f) for r, _, fs in os.walk(d) for f in fs]
+        if sum(1 for f in files if os.path.basename(f) == 'SKILL.md') != 1:
+            errors.append(f'{name}: must contain exactly one SKILL.md')
+        if a.max_files and len(files) > a.max_files:
+            errors.append(f'{name}: {len(files)} files, limit is {a.max_files}')
     for name, _, mem in plan:
         for n in mem:
             for r in skills[n].hard_refs:

@@ -15,13 +15,14 @@ Skill Router Builder groups related skills into **router skills**. A router has 
 
 ```
 Before                                  After
-78 skills in the list                   5 skills in the list
-  ab-testing                              marketing        -> map -> 52 skills
-  ad-creative                             agent-systems    -> map -> 19 skills
-  ads                                     design-tools     -> map ->  5 skills
-  ... 75 more                             stop-slop
+78 skills in the list                   6 skills in the list
+  ab-testing                              marketing-copy   -> map -> 31 skills
+  ad-creative                             marketing-seo    -> map -> 21 skills
+  ads                                     agent-systems    -> map -> 19 skills
+  ... 75 more                             design-tools     -> map ->  5 skills
+                                          stop-slop
                                           remotion
-~14,700 tokens per conversation         ~950 tokens per conversation
+~14,700 tokens per conversation         ~1,200 tokens per conversation
 ```
 
 Nothing is written by hand. The tool reads your skills, finds which ones belong together and writes every map from the skills' own descriptions. Works with any skill collection.
@@ -32,9 +33,9 @@ On a real collection of 78 public skills (marketing, agent systems, design):
 
 | | Before | After |
 |---|---|---|
-| Top-level skills | 78 | 5 |
-| Skill text in every conversation | ~14,700 tokens | ~950 tokens (**-94%**) |
-| Picking the right skill (70 test requests) | 69 / 70 | **70 / 70** |
+| Top-level skills | 78 | 6 |
+| Skill text in every conversation | ~14,700 tokens | ~1,200 tokens (**-92%**) |
+| Picking the right skill (70 test requests) | 69 / 70 | 69 / 70 |
 
 Details and the unit tests: [tests/RESULTS.md](tests/RESULTS.md)
 
@@ -47,6 +48,8 @@ It builds a web of connections between skills:
 3. **Similarity**: how much the names and descriptions overlap.
 
 Community detection then finds the natural clusters. Big clusters become routers. Small clusters and loosely connected skills stay on their own, so unrelated skills are never forced together. A general-purpose skill (for example a writing-style skill) stays standalone automatically.
+
+Bundles are kept upload-ready: each one holds exactly one `SKILL.md` (bundled sub-skills keep their instructions in `INSTRUCTIONS.md`), development-only files such as `evals/` and `tests/` are left out, and a router that would exceed the file limit (200 by default) is split into smaller routers along the same connection graph.
 
 Each generated router contains:
 - a short description (under 1024 characters) listing its members and their main trigger phrases,
@@ -74,9 +77,9 @@ The report at the end shows how much you saved:
 
 ```
 Result:
-  top-level skills : 78 -> 5
-  always-loaded    : ~14731 -> ~950 tokens per conversation (94% less)
-  router map marketing: ~3920 tokens, read only when that area is used
+  top-level skills : 78 -> 6
+  always-loaded    : ~14731 -> ~1190 tokens per conversation (92% less)
+  router map marketing-copy: ~2630 tokens, read only when that area is used
 ```
 
 ## Adding, removing and updating skills
@@ -124,6 +127,8 @@ Everything works without a config. Use one to name routers, add keywords in your
 | `resolution` | Lower = fewer, bigger routers. Higher = more, smaller routers. Default 1.0 |
 | `min_group` | Smallest cluster that becomes a router. Default 4 |
 | `min_affinity` | How strongly a skill must be tied to its cluster to join it. Default 2.0 |
+| `max_files` | Largest bundle in files; bigger routers are split. Default 200, 0 = no limit |
+| `exclude` | Extra file globs to leave out, matched inside each skill (for example `canvas-fonts/*`) |
 | `standalone` | Skills that are never bundled |
 | `groups[].anchors` | The cluster containing these skills gets this router's name and settings, even after new skills are added |
 | `groups[].members` | Force skills into this router |

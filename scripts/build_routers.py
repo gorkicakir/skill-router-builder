@@ -426,6 +426,23 @@ def copy_skill(skill, dst, patterns, nested=False):
 
 # --------------------------------------------------------------------------- splitting oversized routers
 
+def pack(bundles, count, max_files, edges):
+    """Greedy fallback: grow parts from the most-linked bundles while they fit."""
+    link = lambda a, b: sum(edges.get(tuple(sorted((x, y))), 0) for x in a for y in b)
+    left = sorted(bundles, key=lambda b: (-len(b), sorted(b)))
+    parts = []
+    while left:
+        cur = set(left.pop(0))
+        while True:
+            fits = [b for b in left if count(cur | b) <= max_files]
+            if not fits:
+                break
+            best = max(fits, key=lambda b: (link(cur, b), -len(b), sorted(b)))
+            cur |= best
+            left.remove(best)
+        parts.append(cur)
+    return parts
+
 def split_oversized(members, skills, edges, patterns, max_files, resolution):
     """Split a group whose bundle would exceed max_files into smaller communities."""
     count = lambda g: 1 + sum(len(member_files(skills[n], patterns)) for n in g)
@@ -462,7 +479,12 @@ def split_oversized(members, skills, edges, patterns, max_files, resolution):
                 parts = list(final.values())
                 break
         if not parts:
-            return None, sorted(g)  # cannot split further (one file-linked bundle)
+            bundles = defaultdict(set)
+            for n in g:
+                bundles[dsu.find(n)].add(n)
+            if len(bundles) == 1:
+                return None, sorted(g)  # one file-linked bundle, cannot split
+            parts = pack(list(bundles.values()), count, max_files, edges)
         pending.extend(parts)
     # greedily re-merge parts that still fit, most-linked first
     link = lambda a, b: sum(edges.get(tuple(sorted((x, y))), 0) for x in a for y in b)

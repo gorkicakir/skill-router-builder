@@ -1,0 +1,30 @@
+{
+  "resolution": 0.7,
+  "min_group": 4,
+  "min_affinity": 2.0,
+  "standalone": ["stop-slop"],
+  "groups": [
+    {
+      "name": "marketing",
+      "anchors": ["copywriting", "ads", "seo-audit"],
+      "members": ["image"],
+      "title": "Marketing Router",
+      "title_en": "marketing, advertising, social media, content, SEO and growth",
+      "triggers": "Also matches: campaign, ad copy, social post, pricing, competitor analysis."
+    },
+    {
+      "name": "agent-systems",
+      "anchors": ["multi-agent-patterns", "memory-systems"],
+      "title": "Agent Systems Router",
+      "title_en": "AI agent systems, automations and context engineering"
+    },
+    {
+      "name": "design-tools",
+      "anchors": ["ui-ux-pro-max"],
+      "title": "Design Router",
+      "title_en": "UI/UX, brand identity, logos, banners and design systems",
+      "notes": ["These sub-skills call each other's scripts via ../<name>/; keep them together."]
+    }
+  ],
+  "overrides": {}
+}

@@ -1,0 +1,9 @@
+{
+  "sources": [
+    {"repo": "coreyhaines31/marketingskills", "paths": ["skills/*"]},
+    {"repo": "muratcankoylan/Agent-Skills-for-Context-Engineering", "paths": ["skills/*"]},
+    {"repo": "your-name/design-skills", "paths": ["skills/*"], "exclude": ["old-skill"]},
+    {"repo": "hardikpandya/stop-slop", "paths": ["."], "as": "stop-slop"}
+  ],
+  "local": ["~/my-skills"]
+}

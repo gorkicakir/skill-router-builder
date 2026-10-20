@@ -244,6 +244,24 @@ class TestIncrementalBuilds(Base):
         r = run(self.src, self.out)
         self.assertIn("re-upload needed : ['guitar-chords']", r.stdout)
 
+    def test_config_pins_override_previous_layout(self):
+        run(self.src, self.out)
+        cfg = os.path.join(self.tmp, 'cfg.json')
+        save_json({'groups': [{'name': 'misc-tools', 'members': ['tax-forms', 'guitar-chords']}]}, cfg)
+        r = run(self.src, self.out, '--config', cfg)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        after = load_json(os.path.join(self.out, '.router-manifest.json'))['skills']
+        self.assertEqual(after['tax-forms']['group'], 'misc-tools')
+        self.assertEqual(after['guitar-chords']['group'], 'misc-tools')
+
+    def test_unrelated_new_skill_does_not_touch_other_routers(self):
+        run(self.src, self.out)
+        make_skill(self.src, 'chess-openings', 'Learn chess openings and traps. Also use when the user mentions "Sicilian".')
+        r = run(self.src, self.out)
+        line = next(l for l in r.stdout.splitlines() if 're-upload needed' in l)
+        self.assertIn('chess-openings', line)
+        self.assertNotIn('toolkit', line)
+
     def test_removed_skill_is_reported(self):
         run(self.src, self.out)
         shutil.rmtree(os.path.join(self.src, 'tax-forms'))

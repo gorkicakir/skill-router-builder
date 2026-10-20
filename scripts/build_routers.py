@@ -362,6 +362,20 @@ def sticky(old, skills, fresh_groups, fresh_alone, edges, cfg, min_group):
                 kept[info['group']].add(n)
             else:
                 old_alone.add(n)
+    # explicit config choices win over the previous layout
+    for g in cfg.get('groups', []):
+        for pat in g.get('members', []):
+            for n in skills:
+                if re.fullmatch(pat.replace('*', '.*'), n):
+                    for mem in kept.values():
+                        mem.discard(n)
+                    old_alone.discard(n)
+                    kept[g['name']].add(n)
+    for n in forced_alone:
+        for mem in kept.values():
+            mem.discard(n)
+        if n in skills:
+            old_alone.add(n)
     new = sorted(n for n in skills if n not in old['skills'])
     w = lambda x, y: edges.get(tuple(sorted((x, y))), 0)
     min_aff = cfg.get('min_affinity', 2.0)
@@ -619,7 +633,9 @@ def write_router(name, gcfg, members, skills, sim, out_dir, patterns):
         if tr:
             line += (' ' if line.endswith('...') else '. ') + 'Triggers: ' + ', '.join(f'"{t}"' for t in tr) + '.'
         lines.append(line)
-    pairs = sorted(((sim.get(tuple(sorted((a, b))), 0), a, b) for a in members for b in members if a < b), reverse=True)
+    # similarity within the router only, so adding unrelated skills elsewhere does not change this file
+    local = tfidf({n: (n.replace('-', ' ') + ' ') * 2 + skills[n].desc for n in members})
+    pairs = sorted(((cos(local[a], local[b]), a, b) for a in members for b in members if a < b), reverse=True)
     pairs = [p for p in pairs if p[0] >= 0.28][:10]
     if pairs:
         lines += ['', '## Easily confused - decide carefully', '']

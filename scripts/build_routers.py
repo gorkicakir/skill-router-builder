@@ -23,6 +23,8 @@ Usage
                           [--rebalance] [--no-zip] [--dry-run]
 """
 import argparse, fnmatch, hashlib, json, math, os, re, shutil, sys, zipfile
+
+__version__ = '1.2.0'
 from collections import Counter, defaultdict
 
 MAX_DESC = 1024
@@ -691,6 +693,7 @@ def listing_chars(name, desc):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
     ap.add_argument('--src', action='append', required=True)
     ap.add_argument('--out', required=True)
     ap.add_argument('--config')

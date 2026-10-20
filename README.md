@@ -156,6 +156,10 @@ tests/                      unit tests and benchmark results
 python -m unittest discover -s tests -v
 ```
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for every release and the reason behind each change.
+
 ## License
 
 MIT

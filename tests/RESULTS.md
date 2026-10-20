@@ -12,7 +12,7 @@
 | Updates | a new skill joins the right router without reshuffling others, unrelated additions leave other routers untouched, config pins override the previous layout, only changed outputs are flagged for re-upload, removed skills are reported |
 | Upload limits | exactly one SKILL.md per bundle, oversized routers split under the file limit, unsplittable bundles fail with advice, dev-only and excluded files left out |
 
-Two bugs were found and fixed by these tests: small clusters being split into fragments that were too small to become routers, and router descriptions changing between identical runs.
+Bugs found by these tests and fixed are listed with their causes in [CHANGELOG.md](../CHANGELOG.md).
 
 ## Benchmark on a real collection
 

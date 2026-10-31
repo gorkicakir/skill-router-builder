@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Benchmark 2 in `tests/RESULTS.md` and the README: the tool run unchanged on two large public collections (177 and 380 skills), with tokenizer-counted listing sizes, 35-request routing checks per collection and the raw request sets in `tests/benchmark2/`.
+
+### Changed
+- README now states how Claude Code handles large skill listings (1% context budget, least-used descriptions dropped) and what that means for the tool's benefit there.
+
 ## [1.2.0] - 2026-10-20
 
 ### Fixed

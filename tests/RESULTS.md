@@ -46,3 +46,44 @@ Each layout missed at most one request, and each miss was a near-neighbour skill
 | 3 new skills added to an existing build | existing layout unchanged; the related one joined the matching router, unrelated ones stayed standalone |
 | A different collection of 19 unrelated skills | nothing grouped (correct: no shared topic) |
 | Both collections together (97 skills) | 24 top-level skills, -79% always-loaded text |
+
+## Benchmark 2: two large public collections
+
+To check that the first benchmark was not a property of one collection, the tool was run unchanged (v1.2.0, default settings, `networkx` installed) on two popular public skill collections. Both are MIT licensed; thank you to their authors for publishing them.
+
+| Collection | Skills | Source |
+|---|---|---|
+| Scientific skills by K-Dense-AI | 177 (`skills/`) | [K-Dense-AI/claude-scientific-skills](https://github.com/K-Dense-AI/claude-scientific-skills) |
+| Business and engineering skills by Alireza Rezvani | 380 unique (every `*/skills/*` folder, 19 duplicate names skipped) | [alirezarezvani/claude-skills](https://github.com/alirezarezvani/claude-skills) |
+
+Snapshot: 2026-10-31. Token counts below are real counts (`tiktoken`, `cl100k_base`) of the skill listing an agent sees in every conversation: one `- name: description` line per top-level skill. The first benchmark used a character-based estimate; this one does not.
+
+**Context cost**
+
+| Collection | Top-level skills | Listing, before | Listing, after | Change |
+|---|---|---|---|---|
+| Author's own collection (Benchmark 1, estimated) | 78 → 6 | ~14,700 | ~1,200 | -92% |
+| K-Dense-AI scientific (177) | 177 → 112 | 14,867 tokens | 9,573 tokens | **-36%** |
+| alirezarezvani (380) | 380 → 36 | 19,566 tokens | 4,612 tokens | **-76%** |
+
+The scientific collection groups less: 102 of its 177 skills are single-purpose wrappers around one library (`astropy`, `pydicom`, `cantera`, ...) with little in common, and the tool keeps unrelated skills standalone by design rather than forcing them into a router. Lowering `min_affinity` to 1.0 with `resolution` 0.5 gives 177 → 84 (-48%); the default run is reported above.
+
+**Routing accuracy**
+
+For each collection, 35 requests were written in plain user language: 32 that target one specific skill (a mix of skills inside routers and standalone skills: 16 + 16 for the scientific collection, 26 + 6 for the business one) and 3 general questions that should trigger no skill. The same model picked a skill from the flat list and, separately, from the router layout (top level first, then the chosen router's map). The picker was never shown the expected answer.
+
+| Collection | Flat list | Routers | Triggered when none should |
+|---|---|---|---|
+| K-Dense-AI scientific (177) | 35 / 35 | 35 / 35 | 0 / 0 |
+| alirezarezvani (380) | 35 / 35 | 35 / 35 | 0 / 0 |
+
+Request sets: `tests/benchmark2/`.
+
+**Notes from the runs**
+
+- The 380-skill collection failed validation on the first run: one skill (`skill-tester`) ships an example `assets/sample-skill/SKILL.md`, so its bundle contained two `SKILL.md` files. `--exclude "assets/sample-skill/*"` fixes it; handling nested example skills automatically is on the list.
+- Without `networkx`, the fallback clustering grouped less on the scientific collection (177 → 124, -31%). Install `networkx` for the numbers above.
+
+**Why this matters for Claude Code specifically**
+
+Claude Code caps the skill listing at 1% of the model's context window and, when the listing overflows, silently drops the descriptions of the least-used skills (names stay, matching keywords go). A 380-skill listing of ~19,600 tokens is far over that budget; the 36-entry router listing is much closer to it, so far fewer descriptions are lost. Outside Claude Code (API, claude.ai, other agents) there is no such cap and the saving is simply the token difference above.

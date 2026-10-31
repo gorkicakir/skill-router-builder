@@ -9,6 +9,8 @@ Less context used in every conversation, the same accuracy, and updates that do 
 
 Agent skills (folders with a `SKILL.md`) are loaded lazily: the full instructions only load when a skill is used. But the **name and description of every installed skill** is loaded in every conversation so the agent can choose. Install 80 skills and you pay for 80 descriptions every time, around 15,000 tokens, before you have typed anything. Similar skills also start competing with each other.
 
+**Claude Code is a special case.** It caps the skill listing at about 1% of the model's context window (roughly 2,000 tokens on a 200K model) and, when the listing overflows, silently drops the descriptions of the skills you use least: the names stay, the keywords Claude matches on are gone ([docs](https://code.claude.com/docs/en/skills#skill-descriptions-are-cut-short)). So in Claude Code the problem with 80+ skills is not mainly the tokens; it is that most descriptions never reach the model. A router listing is many times shorter (36 entries instead of 380 in the benchmark below), so it fits the budget far better and far fewer descriptions are dropped. On the API, claude.ai and other agents there is no such cap and the saving is the plain token difference.
+
 ## The solution
 
 Skill Router Builder groups related skills into **router skills**. A router has one short description at the top level and a map inside that points to its members. The agent first picks the router, reads its map, then opens only the skill it needs.
@@ -29,15 +31,27 @@ Nothing is written by hand. The tool reads your skills, finds which ones belong 
 
 ## Results
 
-On a real collection of 78 public skills (marketing, agent systems, design):
+Measured on the author's own collection and on two large public collections, with the tool unchanged (default settings):
 
-| | Before | After |
-|---|---|---|
-| Top-level skills | 78 | 6 |
-| Skill text in every conversation | ~14,700 tokens | ~1,200 tokens (**-92%**) |
-| Picking the right skill (70 test requests) | 69 / 70 | 69 / 70 |
+| Collection | Top-level skills | Skill text in every conversation | Picking the right skill |
+|---|---|---|---|
+| Author's own collection (78 skills: marketing, agent systems, design) | 78 → 6 | ~14,700 → ~1,200 tokens (**-92%**, estimated) | 69 / 70 → 69 / 70 |
+| [K-Dense-AI/claude-scientific-skills](https://github.com/K-Dense-AI/claude-scientific-skills) (177 skills) | 177 → 112 | 14,867 → 9,573 tokens (**-36%**, counted) | 35 / 35 → 35 / 35 |
+| [alirezarezvani/claude-skills](https://github.com/alirezarezvani/claude-skills) (380 skills) | 380 → 36 | 19,566 → 4,612 tokens (**-76%**, counted) | 35 / 35 → 35 / 35 |
 
-Details and the unit tests: [tests/RESULTS.md](tests/RESULTS.md)
+Details, the request sets and the unit tests: [tests/RESULTS.md](tests/RESULTS.md)
+
+### Benchmark 2: two public collections
+
+![Running the tool on a 380-skill collection](tests/benchmark2/benchmark2.gif)
+
+- Collections: the scientific skills by K-Dense-AI (177 skills) and the business and engineering skills by Alireza Rezvani (380 unique skills). Both MIT; thanks to their authors for publishing them.
+- Token counts are real (`tiktoken`, `cl100k_base`) over the `name: description` listing an agent sees every conversation, not character estimates.
+- The business collection groups well: 380 → 36 top-level entries, 19,566 → 4,612 tokens (-76%).
+- The scientific collection groups less: nothing is forced together, and 102 of its 177 skills are single-library wrappers with little in common, so 177 → 112 (-36%). Looser settings (`min_affinity` 1.0, `resolution` 0.5) give 177 → 84 (-48%).
+- Routing accuracy: 35 plain-language requests per collection (32 targeting one skill, 3 that should trigger nothing). Flat list 35/35, routers 35/35, no false triggers, in both collections.
+- One real-world snag: a skill that ships an example `SKILL.md` inside `assets/` breaks the one-`SKILL.md` rule; `--exclude "assets/sample-skill/*"` fixes it (automatic handling is planned).
+- Install `networkx`: without it the fallback clustering grouped less (177 → 124).
 
 ## How it groups skills
 

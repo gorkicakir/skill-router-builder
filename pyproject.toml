@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skill-router-builder"
+version = "1.3.0"
+description = "Group a large collection of agent skills into a few router skills so an agent loads only what it needs."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+keywords = ["agent", "skills", "router", "context", "llm"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.optional-dependencies]
+recommended = ["networkx>=3.0"]
+
+[project.urls]
+Homepage = "https://github.com/gorkicakir/skill-router-builder"
+Changelog = "https://github.com/gorkicakir/skill-router-builder/blob/main/CHANGELOG.md"
+
+[project.scripts]
+skill-router = "build_routers:main"
+skill-router-sync = "sync_sources:main"
+
+[tool.setuptools]
+package-dir = { "" = "scripts" }
+py-modules = ["build_routers", "sync_sources"]

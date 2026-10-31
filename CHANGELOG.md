@@ -3,12 +3,17 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.3.0] - 2026-10-31
 
 ### Added
 - Benchmark 2 in `tests/RESULTS.md` and the README: the tool run unchanged on two large public collections (177 and 380 skills), with tokenizer-counted listing sizes, 35-request routing checks per collection and the raw request sets in `tests/benchmark2/`.
+- `pyproject.toml`: the tool installs with `pip install "skill-router-builder @ git+https://github.com/gorkicakir/skill-router-builder"` and provides the `skill-router` and `skill-router-sync` commands; the `[recommended]` extra pulls in `networkx`.
+
+### Fixed
+- A skill folder that ships another `SKILL.md` deeper inside it (a sample or template skill under `assets/`, `examples/` and the like) no longer fails validation with "must contain exactly one SKILL.md": nested `SKILL.md` files are left out of the bundle and reported once. Found on a 380-skill public collection.
 
 ### Changed
+- `networkx` is now listed as recommended rather than optional; the fallback clustering groups noticeably less.
 - README now states how Claude Code handles large skill listings (1% context budget, least-used descriptions dropped) and what that means for the tool's benefit there.
 
 ## [1.2.0] - 2026-10-20
@@ -48,6 +53,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Configuration for router names, anchors, pinned members, standalone skills, extra triggers, notes and description overrides.
 - Unit tests and benchmark results.
 
+[1.3.0]: https://github.com/gorkicakir/skill-router-builder/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/gorkicakir/skill-router-builder/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/gorkicakir/skill-router-builder/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/gorkicakir/skill-router-builder/releases/tag/v1.0.0

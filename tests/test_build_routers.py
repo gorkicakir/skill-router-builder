@@ -317,6 +317,20 @@ class TestHostLimits(Base):
                  for f in self.all_files(top)]
         self.assertFalse(any('/telescope-setup/assets/' in f or '/telescope-setup/evals/' in f for f in files))
 
+    def test_nested_sample_skill_md_is_left_out(self):
+        # Some published skills ship a sample skill (assets/sample-skill/SKILL.md) as reference material.
+        # A bundle must hold exactly one SKILL.md, so nested copies are left out of the output.
+        make_skill(self.src, 'telescope-setup', ASTRONOMY['telescope-setup'],
+                   {'assets/sample-skill/SKILL.md': '---\nname: sample\ndescription: Example.\n---\n',
+                    'assets/sample-skill/notes.md': 'kept'})
+        r = run(self.src, self.out)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn('nested SKILL.md', r.stdout)
+        files = [f.replace('\\', '/') for top in os.listdir(self.out) if os.path.isdir(os.path.join(self.out, top))
+                 for f in self.all_files(top)]
+        self.assertFalse(any(f.endswith('/sample-skill/SKILL.md') for f in files))
+        self.assertTrue(any(f.endswith('/sample-skill/notes.md') for f in files))
+
 
 if __name__ == '__main__':
     unittest.main()

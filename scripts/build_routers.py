@@ -24,7 +24,7 @@ Usage
 """
 import argparse, fnmatch, hashlib, json, math, os, re, shutil, sys, zipfile
 
-__version__ = '1.2.0'
+__version__ = '1.3.0'
 from collections import Counter, defaultdict
 
 MAX_DESC = 1024
@@ -412,6 +412,8 @@ def excluded(rel, patterns):
     rel = rel.replace('\\', '/')
     return any(fnmatch.fnmatch(rel, p) or fnmatch.fnmatch(os.path.basename(rel), p) for p in patterns)
 
+NESTED_SKILL_MDS = set()  # skill names whose folders carried extra SKILL.md files (reported once)
+
 def member_files(skill, patterns):
     out = []
     for root, dirs, files in os.walk(skill.path):
@@ -419,6 +421,10 @@ def member_files(skill, patterns):
         for fn in sorted(files):
             fp = os.path.join(root, fn)
             rel = os.path.relpath(fp, skill.path)
+            if fn == 'SKILL.md' and root != skill.path:
+                # a sample or template skill shipped inside this skill; a bundle may hold only one SKILL.md
+                NESTED_SKILL_MDS.add(skill.name)
+                continue
             if not excluded(rel, patterns):
                 out.append(rel)
     return out
@@ -792,6 +798,10 @@ def main():
             warnings.append(f'{s.name}: name is not lowercase-hyphen, some hosts may reject it')
         write_standalone(s, a.out, warnings, patterns)
         top.append((s.name, s.desc[:MAX_DESC], os.path.join(a.out, s.folder, 'SKILL.md')))
+
+    if NESTED_SKILL_MDS:
+        print(f'  note: nested SKILL.md left out of {len(NESTED_SKILL_MDS)} skill folder(s) '
+              f'(sample or template skills): ' + ', '.join(sorted(NESTED_SKILL_MDS)))
 
     # validation
     errors = []

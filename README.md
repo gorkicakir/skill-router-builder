@@ -50,7 +50,7 @@ Details, the request sets and the unit tests: [tests/RESULTS.md](tests/RESULTS.m
 - The business collection groups well: 380 → 36 top-level entries, 19,566 → 4,612 tokens (-76%).
 - The scientific collection groups less: nothing is forced together, and 102 of its 177 skills are single-library wrappers with little in common, so 177 → 112 (-36%). Looser settings (`min_affinity` 1.0, `resolution` 0.5) give 177 → 84 (-48%).
 - Routing accuracy: 35 plain-language requests per collection (32 targeting one skill, 3 that should trigger nothing). Flat list 35/35, routers 35/35, no false triggers, in both collections.
-- One real-world snag: a skill that ships an example `SKILL.md` inside `assets/` breaks the one-`SKILL.md` rule; `--exclude "assets/sample-skill/*"` fixes it (automatic handling is planned).
+- One real-world snag, now handled: a skill that ships an example `SKILL.md` inside `assets/` would break the one-`SKILL.md` rule. Since 1.3.0 nested `SKILL.md` files are left out automatically and reported.
 - Install `networkx`: without it the fallback clustering grouped less (177 → 124).
 
 ## How it groups skills
@@ -72,16 +72,26 @@ Each generated router contains:
 
 ## Quick start
 
-Requirements: Python 3.8+. Optional: `networkx` (better clustering), `git` (for GitHub sources).
+Requirements: Python 3.8+. Recommended: `networkx` (`pip install networkx`; the fallback clustering groups noticeably less, 177 → 124 instead of 112 on the scientific collection). Optional: `git` (for GitHub sources).
+
+Install with pip (adds the `skill-router` and `skill-router-sync` commands):
 
 ```bash
-git clone https://github.com/<your-account>/skill-router-builder
-cd skill-router-builder
+pip install "skill-router-builder[recommended] @ git+https://github.com/gorkicakir/skill-router-builder"
 
 # 1. preview the grouping
-python scripts/build_routers.py --src ~/path/to/skills --out out --dry-run
+skill-router --src ~/path/to/skills --out out --dry-run
 
 # 2. build
+skill-router --src ~/path/to/skills --out out
+```
+
+Or run it from a clone without installing anything:
+
+```bash
+git clone https://github.com/gorkicakir/skill-router-builder
+cd skill-router-builder
+python scripts/build_routers.py --src ~/path/to/skills --out out --dry-run
 python scripts/build_routers.py --src ~/path/to/skills --out out
 ```
 

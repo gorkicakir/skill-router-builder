@@ -4,3 +4,6 @@ out/
 work/
 *.zip
 .DS_Store
+build/
+*.egg-info/
+dist/
